@@ -1,0 +1,22 @@
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #020617; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #475569; }
+
+.card-hover {
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+}
+
+@keyframes shake {
+  0%,  100% { transform: translateX(0); }
+  20%       { transform: translateX(-5px); }
+  40%       { transform: translateX( 5px); }
+  60%       { transform: translateX(-3px); }
+  80%       { transform: translateX( 3px); }
+}
+.shake {
+  animation: shake 0.35s ease;
+}
