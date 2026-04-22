@@ -1,12 +1,38 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- Apply theme before first paint to prevent flash -->
+  <script>(function(){try{var t=localStorage.getItem('byteflag-theme');var d=t?t==='dark':window.matchMedia('(prefers-color-scheme: dark)').matches;if(d)document.documentElement.classList.add('dark');}catch(e){document.documentElement.classList.add('dark');}})()</script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ByteFlag — CTF Learning Platform</title>
 
   <!-- Styling -->
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            emerald: {
+              50:  '#FFF1F1',
+              100: '#FFE0E0',
+              200: '#FFC5C5',
+              300: '#FF9090',
+              400: '#EF3535',
+              500: '#E21617',
+              600: '#D01415',
+              700: '#9A1412',
+              800: '#641110',
+              900: '#3D0B0B',
+              950: '#260606',
+            }
+          }
+        }
+      }
+    }
+  </script>
   <link rel="stylesheet" href="style.css">
 
   <!-- React + JSX (no build step needed) -->

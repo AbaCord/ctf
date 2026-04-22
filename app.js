@@ -80,12 +80,80 @@ function calcCatStats(prog) {
 }
 
 function checkFlag(challenge, input) {
+  const attempt = input.trim();
+  if (!attempt) return false;
+  // Regex pattern — used for variable answers like commit hashes
+  if (challenge.flagPattern) {
+    const re = new RegExp(challenge.flagPattern, challenge.flagCaseSensitive === false ? 'i' : '');
+    return re.test(attempt);
+  }
   const expected = challenge.flag.trim();
-  const attempt  = input.trim();
   if (!expected) return false;
   return challenge.flagCaseSensitive === false
     ? expected.toLowerCase() === attempt.toLowerCase()
     : expected === attempt;
+}
+
+// ================================================================
+// GITHUB USERNAME — stored separately from challenge progress
+// ================================================================
+
+function loadGitHubUsername() {
+  try { return localStorage.getItem('byteflag-github') || ''; } catch { return ''; }
+}
+
+function saveGitHubUsername(u) {
+  try {
+    if (u) localStorage.setItem('byteflag-github', u);
+    else localStorage.removeItem('byteflag-github');
+  } catch {}
+}
+
+async function verifyGitHubChallenge(ch, username) {
+  const { type, repo, minCommits, path, pattern } = ch.githubVerify;
+  const enc = s => encodeURIComponent(s);
+  const base = `https://api.github.com/repos/${enc(username)}/${enc(repo)}`;
+  const headers = { 'Accept': 'application/vnd.github.v3+json' };
+
+  try {
+    if (type === 'repo-exists') {
+      const r = await fetch(base, { headers });
+      if (r.status === 200) return { ok: true };
+      if (r.status === 404) return { ok: false, message: `Repo "${username}/${repo}" not found. Is it public and spelled correctly?` };
+      return { ok: false, message: `GitHub returned ${r.status}. Try again in a moment.` };
+    }
+
+    if (type === 'has-commits') {
+      const r = await fetch(`${base}/commits?per_page=5`, { headers });
+      if (r.status === 404) return { ok: false, message: `Repo not found. Make sure it exists and is public.` };
+      if (r.status === 409) return { ok: false, message: `Repo exists but is empty — push at least one commit first.` };
+      if (!r.ok) return { ok: false, message: `GitHub API error ${r.status}.` };
+      const data = await r.json();
+      const count = Array.isArray(data) ? data.length : 0;
+      if (count >= (minCommits || 1)) return { ok: true };
+      return { ok: false, message: `Found ${count} commit(s) — need at least ${minCommits || 1}.` };
+    }
+
+    if (type === 'has-file') {
+      const r = await fetch(`${base}/contents/${path}`, { headers });
+      if (r.ok) return { ok: true };
+      return { ok: false, message: `File "${path}" not found in ${repo}.` };
+    }
+
+    if (type === 'commit-message') {
+      const r = await fetch(`${base}/commits?per_page=10`, { headers });
+      if (!r.ok) return { ok: false, message: `Could not fetch commits from ${repo}.` };
+      const commits = await r.json();
+      if (!Array.isArray(commits) || commits.length === 0) return { ok: false, message: 'No commits found in this repo.' };
+      const re = new RegExp(pattern);
+      if (commits.some(c => re.test(c.commit.message))) return { ok: true };
+      return { ok: false, message: 'No commit with the required message format found. Check with `git log --oneline`.' };
+    }
+
+    return { ok: false, message: 'Unknown verification type.' };
+  } catch (err) {
+    return { ok: false, message: `Network error: ${err.message}` };
+  }
 }
 
 // ================================================================
@@ -128,7 +196,8 @@ function Markdown({ text }) {
 function inlineFormat(text) {
   const parts = [];
   let key = 0;
-  const re = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  // matches **bold**, `code`, and [link text](url)
+  const re = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
   let last = 0;
   let match;
   while ((match = re.exec(text)) !== null) {
@@ -136,6 +205,16 @@ function inlineFormat(text) {
     const token = match[1];
     if (token.startsWith('**')) {
       parts.push(<strong key={key++} className="text-white font-semibold">{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith('[')) {
+      const m = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (m) parts.push(
+        <a key={key++} href={m[2]} download={m[2].match(/\.(zip|tar|gz|tgz)$/i) ? true : undefined}
+           target={m[2].startsWith('http') ? '_blank' : undefined}
+           rel={m[2].startsWith('http') ? 'noopener noreferrer' : undefined}
+           className="text-emerald-400 hover:text-emerald-300 underline transition-colors">
+          {m[1]}
+        </a>
+      );
     } else {
       parts.push(<code key={key++} className="bg-slate-800 text-emerald-300 font-mono text-[0.8em] px-1.5 py-0.5 rounded">{token.slice(1, -1)}</code>);
     }
@@ -170,7 +249,7 @@ function ProgressBar({ pct, barClass }) {
 // NAVIGATION
 // ================================================================
 
-function Nav({ page, go, score, solved }) {
+function Nav({ page, go, score, solved, dark, setDark }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const links = [['dashboard', 'Dashboard'], ['challenges', 'Challenges'], ['profile', 'Profile']];
 
@@ -196,20 +275,38 @@ function Nav({ page, go, score, solved }) {
           ))}
         </div>
 
-        <div className="hidden sm:flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-full px-3 py-1 font-mono text-sm shrink-0">
-          <span className="text-emerald-400 font-bold">{score}</span>
-          <span className="text-slate-600">pts</span>
-          <span className="w-px h-3 bg-slate-700" />
-          <span className="text-slate-300">{solved}</span>
-          <span className="text-slate-600">solved</span>
-        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="hidden sm:flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-full px-3 py-1 font-mono text-sm">
+            <span className="text-emerald-400 font-bold">{score}</span>
+            <span className="text-slate-600">pts</span>
+            <span className="w-px h-3 bg-slate-700" />
+            <span className="text-slate-300">{solved}</span>
+            <span className="text-slate-600">solved</span>
+          </div>
 
-        <button className="sm:hidden text-slate-400 p-1" onClick={() => setMenuOpen(!menuOpen)}>
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d={menuOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} />
-          </svg>
-        </button>
+          <button onClick={() => setDark(d => !d)}
+            className="p-2 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+            title={dark ? 'Switch to light mode' : 'Switch to dark mode'}>
+            {dark ? (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M12 7a5 5 0 100 10A5 5 0 0012 7z" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+              </svg>
+            )}
+          </button>
+
+          <button className="sm:hidden text-slate-400 p-1" onClick={() => setMenuOpen(!menuOpen)}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                d={menuOpen ? 'M6 18L18 6M6 6l12 12' : 'M4 6h16M4 12h16M4 18h16'} />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {menuOpen && (
@@ -465,23 +562,44 @@ function ChallengeCard({ ch, prog, pick, go }) {
 // CHALLENGE DETAIL
 // ================================================================
 
-function ChallengeDetail({ id, prog, onSolve, onHint, onVideo, go }) {
+function ChallengeDetail({ id, prog, onSolve, onHint, onVideo, go, githubUsername }) {
   const ch = CHALLENGES.find(c => c.id === id);
-  const [input,   setInput]   = useState('');
-  const [status,  setStatus]  = useState(null); // null | 'ok' | 'bad'
-  const [shakeKey, setShakeKey] = useState(0);
-  const [confirm, setConfirm] = useState(null); // null | hint-index | 'video'
+  const [input,      setInput]      = useState('');
+  const [status,     setStatus]     = useState(null); // null | 'ok' | 'bad'
+  const [shakeKey,   setShakeKey]   = useState(0);
+  const [confirm,    setConfirm]    = useState(null); // null | hint-index | 'video'
+  const [verifying,  setVerifying]  = useState(false);
+  const [verifyMsg,  setVerifyMsg]  = useState('');
 
   if (!ch) return <div className="text-center py-20 text-slate-600">Challenge not found.</div>;
 
-  const solved       = !!prog.solved[id];
+  const solved        = !!prog.solved[id];
   const unlockedHints = prog.hints[id] || [];
   const videoUnlocked = prog.videos.includes(id);
-  const score        = calcTotalScore(prog);
+  const score         = calcTotalScore(prog);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     if (solved) return;
+
+    if (ch.githubVerify) {
+      if (!githubUsername) return;
+      setVerifying(true);
+      setVerifyMsg('');
+      const result = await verifyGitHubChallenge(ch, githubUsername);
+      setVerifying(false);
+      if (result.ok) {
+        setStatus('ok');
+        onSolve(id);
+      } else {
+        setStatus('bad');
+        setVerifyMsg(result.message);
+        setShakeKey(k => k + 1);
+        setTimeout(() => { setStatus(null); setVerifyMsg(''); }, 6000);
+      }
+      return;
+    }
+
     if (checkFlag(ch, input)) {
       setStatus('ok');
       onSolve(id);
@@ -539,17 +657,49 @@ function ChallengeDetail({ id, prog, onSolve, onHint, onVideo, go }) {
         <Markdown text={ch.description} />
       </div>
 
-      {/* Flag submission */}
+      {/* Flag submission / GitHub verification */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-5">
-        <div className="text-xs text-slate-600 uppercase tracking-wider font-medium mb-4">Submit Flag</div>
+        <div className="text-xs text-slate-600 uppercase tracking-wider font-medium mb-4">
+          {ch.githubVerify ? 'GitHub Verification' : 'Submit Flag'}
+        </div>
+
         {solved ? (
           <div className="flex items-center gap-3 p-4 bg-emerald-950/60 border border-emerald-700/40 rounded-lg">
             <span className="text-emerald-400 text-2xl">✓</span>
             <div>
-              <div className="text-emerald-300 font-semibold">Solved!</div>
+              <div className="text-emerald-300 font-semibold">{ch.githubVerify ? 'Verified!' : 'Solved!'}</div>
               <div className="text-emerald-600 text-sm font-mono">+{prog.solved[id].pts} points earned</div>
             </div>
           </div>
+        ) : ch.githubVerify ? (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {!githubUsername ? (
+              <div className="p-3 rounded-lg bg-amber-950/40 border border-amber-800/40">
+                <p className="text-amber-400 text-sm">
+                  Set your GitHub username in{' '}
+                  <button type="button" onClick={() => go('profile')}
+                    className="underline hover:text-amber-300 transition-colors">Profile</button>
+                  {' '}before verifying.
+                </p>
+              </div>
+            ) : (
+              <div className="p-3 rounded-lg bg-slate-800/50 border border-slate-700 font-mono text-sm text-slate-400">
+                Checking:{' '}
+                <span className="text-slate-200">
+                  github.com/{githubUsername}/{ch.githubVerify.repo}
+                </span>
+              </div>
+            )}
+            {verifyMsg && (
+              <div key={shakeKey} className={`p-3 rounded-lg bg-red-950/40 border border-red-900/40 ${status === 'bad' ? 'shake' : ''}`}>
+                <p className="text-red-400 text-sm">✗ {verifyMsg}</p>
+              </div>
+            )}
+            <button type="submit" disabled={!githubUsername || verifying}
+              className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-30 disabled:cursor-not-allowed text-slate-950 font-semibold px-5 py-2.5 rounded-lg transition-colors text-sm">
+              {verifying ? '⏳ Checking GitHub…' : 'Verify on GitHub'}
+            </button>
+          </form>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-3">
             <div key={shakeKey} className={status === 'bad' ? 'shake' : ''}>
@@ -695,8 +845,16 @@ function ChallengeDetail({ id, prog, onSolve, onHint, onVideo, go }) {
 // PROFILE
 // ================================================================
 
-function Profile({ prog, onReset }) {
+function Profile({ prog, onReset, githubUsername, onGitHubChange }) {
   const [confirmReset, setConfirmReset] = useState(false);
+  const [ghInput,  setGhInput]  = useState(githubUsername || '');
+  const [ghSaved,  setGhSaved]  = useState(false);
+
+  function saveGH() {
+    onGitHubChange(ghInput.trim());
+    setGhSaved(true);
+    setTimeout(() => setGhSaved(false), 2000);
+  }
 
   const score    = calcTotalScore(prog);
   const spent    = calcHintSpend(prog);
@@ -787,6 +945,34 @@ function Profile({ prog, onReset }) {
         )}
       </div>
 
+      {/* GitHub Account */}
+      <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <h2 className="text-xs font-medium text-slate-500 uppercase tracking-wider mb-1">GitHub Account</h2>
+        <p className="text-slate-600 text-sm mb-4">Link your username to unlock GitHub-verified challenges.</p>
+        <div className="flex gap-2">
+          <input
+            value={ghInput}
+            onChange={e => setGhInput(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && saveGH()}
+            placeholder="your-github-username"
+            className="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 font-mono focus:outline-none focus:border-emerald-600 transition-colors"
+          />
+          <button onClick={saveGH}
+            className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold px-4 py-2 rounded-lg transition-colors text-sm shrink-0">
+            {ghSaved ? 'Saved ✓' : 'Save'}
+          </button>
+        </div>
+        {githubUsername && (
+          <p className="text-slate-600 text-xs mt-2 font-mono">
+            Linked:{' '}
+            <a href={`https://github.com/${githubUsername}`} target="_blank" rel="noopener noreferrer"
+              className="text-emerald-600 hover:text-emerald-400 transition-colors">
+              github.com/{githubUsername}
+            </a>
+          </p>
+        )}
+      </div>
+
       {/* Reset */}
       <div className="bg-slate-900 border border-red-950/60 rounded-xl p-5">
         <h2 className="text-xs font-medium text-red-800 uppercase tracking-wider mb-3">Danger Zone</h2>
@@ -820,11 +1006,24 @@ function Profile({ prog, onReset }) {
 // ================================================================
 
 function App() {
-  const [page,  setPage]  = useState('dashboard');
-  const [selId, setSelId] = useState(null);
-  const [prog,  setProg]  = useState(loadProgress);
+  const [page,           setPage]           = useState('dashboard');
+  const [selId,          setSelId]          = useState(null);
+  const [prog,           setProg]           = useState(loadProgress);
+  const [githubUsername, setGithubUsername] = useState(loadGitHubUsername);
+  const [dark,           setDark]           = useState(() => {
+    try {
+      const stored = localStorage.getItem('byteflag-theme');
+      if (stored) return stored === 'dark';
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch { return true; }
+  });
 
   useEffect(() => { saveProgress(prog); }, [prog]);
+  useEffect(() => { saveGitHubUsername(githubUsername); }, [githubUsername]);
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+    try { localStorage.setItem('byteflag-theme', dark ? 'dark' : 'light'); } catch {}
+  }, [dark]);
 
   function go(p) {
     setPage(p);
@@ -869,7 +1068,7 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-950">
-      <Nav page={page} go={go} score={score} solved={solved} />
+      <Nav page={page} go={go} score={score} solved={solved} dark={dark} setDark={setDark} />
       <main className="pb-16">
         {page === 'dashboard' && <Dashboard prog={prog} go={go} pick={setSelId} />}
         {page === 'challenges' && <ChallengeList prog={prog} pick={setSelId} go={go} />}
@@ -877,10 +1076,14 @@ function App() {
           <ChallengeDetail
             id={selId} prog={prog}
             onSolve={handleSolve} onHint={handleHint} onVideo={handleVideo}
+            githubUsername={githubUsername}
             go={go}
           />
         )}
-        {page === 'profile' && <Profile prog={prog} onReset={handleReset} />}
+        {page === 'profile' && (
+          <Profile prog={prog} onReset={handleReset}
+            githubUsername={githubUsername} onGitHubChange={setGithubUsername} />
+        )}
       </main>
     </div>
   );

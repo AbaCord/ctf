@@ -1,14 +1,22 @@
+/* ============================================================
+   SCROLLBARS — dark mode default
+   ============================================================ */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: #020617; }
 ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #475569; }
 
+html:not(.dark) ::-webkit-scrollbar-track { background: #F5F5F5; }
+html:not(.dark) ::-webkit-scrollbar-thumb { background: #CFCFCF; }
+html:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #AEAEAE; }
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
 .card-hover {
   transition: transform 0.15s ease, border-color 0.15s ease;
 }
-.card-hover:hover {
-  transform: translateY(-2px);
-}
+.card-hover:hover { transform: translateY(-2px); }
 
 @keyframes shake {
   0%,  100% { transform: translateX(0); }
@@ -17,6 +25,64 @@
   60%       { transform: translateX(-3px); }
   80%       { transform: translateX( 3px); }
 }
-.shake {
-  animation: shake 0.35s ease;
-}
+.shake { animation: shake 0.35s ease; }
+
+/* ============================================================
+   LIGHT MODE OVERRIDES
+   Specificity: html:not(.dark) .class = [0,2,1] beats Tailwind's
+   single-class [0,1,0]. Rules only fire when html lacks .dark.
+   ============================================================ */
+
+/* ---- Page & card backgrounds ---- */
+html:not(.dark) .bg-slate-950     { background-color: #F3F4F6; }
+html:not(.dark) .bg-slate-900     { background-color: #FFFFFF; }
+html:not(.dark) .bg-slate-800     { background-color: #EBEBEB; }
+html:not(.dark) .bg-slate-700     { background-color: #E0E0E0; }
+
+/* Opacity-modified backgrounds (Tailwind escapes / as \/) */
+html:not(.dark) .bg-slate-900\/95 { background-color: rgba(255,255,255,0.97); }
+html:not(.dark) .bg-slate-800\/40 { background-color: rgba(235,235,235,0.65); }
+html:not(.dark) .bg-slate-800\/50 { background-color: rgba(235,235,235,0.75); }
+
+/* Code blocks — slightly off-white to distinguish from pure-white cards */
+html:not(.dark) pre.bg-slate-900  { background-color: #F8F8F8; }
+
+/* Solved card tint — very subtle red blush on white */
+html:not(.dark) .bg-emerald-950\/20 { background-color: rgba(226,22,23,0.06); }
+html:not(.dark) .bg-emerald-950\/60 { background-color: rgba(226,22,23,0.10); }
+
+/* Warning / error boxes — replace near-black tints with subtle colour wash */
+html:not(.dark) .bg-amber-950\/40  { background-color: rgba(245,158,11,0.12); }
+html:not(.dark) .bg-red-950\/40    { background-color: rgba(226,22,23,0.08); }
+html:not(.dark) .bg-red-950\/60    { background-color: rgba(226,22,23,0.12); }
+
+/* ---- Borders ---- */
+html:not(.dark) .border-slate-800  { border-color: #E2E2E2; }
+html:not(.dark) .border-slate-700  { border-color: #D0D0D0; }
+html:not(.dark) .border-slate-600  { border-color: #BBBBBB; }
+
+/* ---- Text ---- */
+html:not(.dark) .text-white        { color: #0D0D0D; }
+html:not(.dark) .text-slate-100    { color: #0D0D0D; }
+html:not(.dark) .text-slate-200    { color: #1C1C1C; }
+html:not(.dark) .text-slate-300    { color: #343434; }
+html:not(.dark) .text-slate-400    { color: #525251; }
+html:not(.dark) .text-slate-500    { color: #6A6A69; }
+html:not(.dark) .text-slate-600    { color: #909090; }
+html:not(.dark) .text-slate-700    { color: #B0B0B0; }
+
+/* Emerald (red) text on light backgrounds needs higher saturation/darkness */
+html:not(.dark) .text-emerald-300  { color: #B21C17; }
+html:not(.dark) .text-emerald-600  { color: #B21C17; }
+html:not(.dark) .text-emerald-700  { color: #8B1513; }
+
+/* ---- Hover states ---- */
+html:not(.dark) .hover\:bg-slate-800:hover     { background-color: #E5E5E5; }
+html:not(.dark) .hover\:bg-slate-700:hover     { background-color: #DCDCDC; }
+html:not(.dark) .hover\:text-slate-200:hover   { color: #1C1C1C; }
+html:not(.dark) .hover\:text-slate-300:hover   { color: #343434; }
+html:not(.dark) .hover\:border-slate-700:hover { border-color: #D0D0D0; }
+html:not(.dark) .hover\:border-slate-600:hover { border-color: #BBBBBB; }
+
+/* ---- Placeholder text ---- */
+html:not(.dark) .placeholder-slate-600::placeholder { color: #AAAAAA; }
